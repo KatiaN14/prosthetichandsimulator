@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMG Gesture Classification — Prosthetic Hand Simulator</title>
+<style>
+  :root {
+    --bg: #f7f8fb;
+    --panel: #ffffff;
+    --text: #1a1d29;
+    --text-muted: #5b6072;
+    --border: #e2e4ea;
+    --accent: #2563eb;
+    --accent-soft: #eaf0fe;
+    --good: #16a34a;
+    --bad: #dc2626;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14151c;
+      --panel: #1d1f2a;
+      --text: #ecedf3;
+      --text-muted: #9a9fb0;
+      --border: #2c2f3d;
+      --accent: #5b8cff;
+      --accent-soft: #202a45;
+      --good: #4ade80;
+      --bad: #f87171;
+      --shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14151c;
+    --panel: #1d1f2a;
+    --text: #ecedf3;
+    --text-muted: #9a9fb0;
+    --border: #2c2f3d;
+    --accent: #5b8cff;
+    --accent-soft: #202a45;
+    --good: #4ade80;
+    --bad: #f87171;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 24px 16px 60px;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 28px; }
+  header h1 { font-size: 1.5rem; margin-bottom: 6px; }
+  header p { color: var(--text-muted); max-width: 640px; margin: 0 auto; font-size: 0.95rem; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 { margin-top: 0; font-size: 1.1rem; }
+
+  .model-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .model-btn {
+    background: var(--panel);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 10px;
+    cursor: pointer;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .model-btn:hover { border-color: var(--accent); }
+  .model-btn.active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    font-weight: 600;
+  }
+
+  .model-info { display: none; }
+  .model-info.visible { display: block; }
+  .model-info .acc {
+    display: inline-block;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    margin-left: 8px;
+  }
+  .pros-cons { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 12px; }
+  .pros-cons div { flex: 1; min-width: 200px; }
+  .pros-cons h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin: 0 0 6px; }
+  .pros-cons ul { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+  .pros-cons li { margin-bottom: 4px; }
+
+  .placeholder-note {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    background: var(--accent-soft);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+  }
+
+  /* Confusion matrix */
+  .cm-wrap { overflow-x: auto; }
+  table.cm { border-collapse: collapse; font-size: 0.7rem; margin: 0 auto; }
+  table.cm th, table.cm td {
+    width: 26px; height: 22px; text-align: center;
+    border: 1px solid var(--border);
+    padding: 0;
+  }
+  table.cm th { color: var(--text-muted); font-weight: 500; }
+  table.cm td { color: #08122b; }
+
+  /* Classify section */
+  .classify-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+  button.primary {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 9px;
+    padding: 11px 18px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  select {
+    padding: 10px 12px;
+    border-radius: 9px;
+    border: 1.5px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 0.9rem;
+  }
+
+  .demo-body { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .hand-col { flex: 1; min-width: 260px; display: flex; flex-direction: column; align-items: center; }
+  .result-col { flex: 1; min-width: 260px; }
+
+  .result-line { margin-bottom: 10px; font-size: 0.95rem; }
+  .result-line .label { color: var(--text-muted); font-size: 0.8rem; display: block; }
+  .verdict {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 10px; font-weight: 700; font-size: 0.95rem;
+    margin-top: 6px;
+  }
+  .verdict.correct { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good); }
+  .verdict.incorrect { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
+
+  .finger { transition: transform 0.5s cubic-bezier(0.34, 1.2, 0.64, 1); transform-box: fill-box; transform-origin: bottom center; }
+  .thumb { transition: transform 0.5s cubic-bezier(0.34, 1.2, 0.64, 1); transform-box: fill-box; transform-origin: bottom right; }
+
+  .sig-plot { width: 100%; max-width: 320px; height: 90px; margin-top: 10px; }
+
+  footer { text-align: center; color: var(--text-muted); font-size: 0.8rem; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>✋ EMG Gesture Classification — Live Demo</h1>
+    <p>
+      Pick a trained model, classify a real EMG signal from the held-out test set,
+      and see the predicted gesture animated. Results below are precomputed from the
+      project notebook — this page loads a trained model's saved results rather than
+      retraining in the browser.
+    </p>
+  </header>
+
+  <!-- ABOUT -->
+  <section class="card">
+    <h2>About this project</h2>
+    <p style="margin-top:-6px;">
+      A small neuroengineering project: classifying 12 finger/thumb gestures from
+      surface EMG signals, as a first step toward getting a feel for how EMG-driven
+      ("myoelectric") prosthetic hand control works — the broader problem this project
+      sits within.
+    </p>
+    <p>
+      <b>Dataset:</b> <a href="http://ninapro.hevs.ch" target="_blank" rel="noopener">NinaPro DB1</a>,
+      Subject 1, Exercise A — 10-channel surface EMG, 12 gestures, 10 repetitions each.
+      Worth being upfront about the scale: this is <b>one subject, one recording
+      session</b> — small enough that results here shouldn't be read as claims about
+      how any of these models would perform on a different person's EMG. Full
+      discussion of that and other limitations is in the project notebook (available on <a href="https://github.com/KatiaN14" target="_blank" rel="noopener">GitHub</a>).
+    </p>
+    <p style="margin-bottom:0;">
+      <b>How this was built:</b> this is a learning project, and part of that
+      learning was being deliberate about <i>how</i> I used AI along the way. I used
+      Claude to understand EMG/ML concepts and get my first models running, but
+      shifted partway through to writing the code myself from explained
+      instructions — the goal being that I acquire new knowledge and skills and that I can
+      actually explain and recreate every part of this project by myself. 
+    </p>
+  </section>
+
+  <!-- MODEL SELECTION -->
+  <section class="card">
+    <h2>1. Choose a model</h2>
+    <div class="model-grid" id="modelGrid"></div>
+
+    <div id="modelInfoBox" class="model-info">
+      <h2 id="modelName">—<span class="acc" id="modelAcc"></span></h2>
+      <p id="modelDesc" style="color:var(--text-muted); margin-top:-4px;"></p>
+      <div class="pros-cons">
+        <div>
+          <h3>Strengths</h3>
+          <ul id="modelPros"></ul>
+        </div>
+        <div>
+          <h3>Limitations</h3>
+          <ul id="modelCons"></ul>
+        </div>
+      </div>
+
+      <h3 style="margin-top:20px; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-muted);">
+        Confusion matrix (test set)
+      </h3>
+      <div class="cm-wrap"><table class="cm" id="cmTable"></table></div>
+    </div>
+  </section>
+
+  <!-- CLASSIFY DEMO -->
+  <section class="card">
+    <h2>2. Classify a test signal</h2>
+    <div class="placeholder-note" id="noModelNote">Pick a model above first.</div>
+
+    <div id="classifyBox" style="display:none;">
+      <div class="classify-controls">
+        <button class="primary" id="randomBtn">🎲 Pick random test signal</button>
+        <select id="gestureSelect"></select>
+        <button class="primary" id="pickGestureBtn">Use this gesture</button>
+      </div>
+
+      <div class="demo-body">
+        <div class="hand-col">
+          <svg viewBox="0 0 300 300" width="260" height="260">
+            <!-- palm -->
+            <rect x="95" y="150" width="110" height="105" rx="22" fill="#e8b48a" stroke="#c98f63" stroke-width="2"/>
+            <!-- fingers -->
+            <rect class="finger" id="f-little" x="103" y="70" width="16" height="82" rx="8" fill="#eac091" stroke="#c98f63" stroke-width="2"/>
+            <rect class="finger" id="f-ring"   x="126" y="55" width="17" height="97" rx="8.5" fill="#eac091" stroke="#c98f63" stroke-width="2"/>
+            <rect class="finger" id="f-middle" x="150" y="48" width="17" height="104" rx="8.5" fill="#eac091" stroke="#c98f63" stroke-width="2"/>
+            <rect class="finger" id="f-index"  x="174" y="58" width="17" height="94" rx="8.5" fill="#eac091" stroke="#c98f63" stroke-width="2"/>
+            <!-- thumb -->
+            <rect class="thumb" id="f-thumb" x="55" y="150" width="20" height="66" rx="10" fill="#eac091" stroke="#c98f63" stroke-width="2"/>
+          </svg>
+          <div id="poseLabel" style="font-weight:600; margin-top:4px;">Neutral</div>
+          <svg class="sig-plot" id="sigPlot" viewBox="0 0 320 90"></svg>
+        </div>
+
+        <div class="result-col">
+          <div class="result-line">
+            <span class="label">True gesture</span>
+            <span id="trueLabelText">—</span>
+          </div>
+          <div class="result-line">
+            <span class="label">Predicted by <b id="activeModelNameInline">—</b></span>
+            <span id="predLabelText">—</span>
+          </div>
+          <div id="verdictBox"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    NinaPro DB1, Subject 1, Exercise A · Results computed offline in the project
+    notebook · Simplified schematic hand, not anatomically precise
+  </footer>
+
+</div>
+
+<script src="visualization_data.js"></script>
+<script>
+// Static descriptive content — not exported data, written once here.
+const MODEL_INFO = {
+  rf: {
+    key: "rf",
+    description: "An ensemble of decision trees trained on 50 hand-crafted statistical features (mean/std/min/max/RMS per electrode) extracted from 200ms sliding windows.",
+    pros: ["Best classical baseline", "Robust to feature scale differences", "Fast to train, interpretable via feature importance"],
+    cons: ["Relies entirely on hand-engineered features", "Feature quality caps its ceiling"]
+  },
+  knn: {
+    key: "knn",
+    description: "k-Nearest Neighbors (k=5) — classifies each window by majority vote among its 5 closest neighbors in feature space.",
+    pros: ["Simple, no training phase", "Easy to reason about"],
+    cons: ["Sensitive to feature scaling", "Weakest classical result here"]
+  },
+  mlp: {
+    key: "mlp",
+    description: "A small feedforward neural network (Dense 64 → Dropout → Dense 32 → Softmax) trained on the same 50 hand-crafted features as the classical models.",
+    pros: ["Best overall accuracy", "Can model feature interactions the tree models can't"],
+    cons: ["Needed a data-shuffling fix to validate correctly during development", "More hyperparameters to tune"]
+  },
+  mlp_es: {
+    key: "mlp_es",
+    description: "Same MLP architecture, trained with EarlyStopping instead of a manually fixed epoch count.",
+    pros: ["Matches the manually-tuned MLP's accuracy", "No need to guess an epoch count", "Automatic overfitting protection"],
+    cons: ["Doesn't improve accuracy over a well-chosen fixed epoch count on its own"]
+  },
+  cnn: {
+    key: "cnn",
+    description: "A small 1D convolutional network trained directly on raw 20-timestep × 10-electrode signal windows — no hand-crafted features.",
+    pros: ["Learns its own filters directly from raw signal", "No manual feature engineering required"],
+    cons: ["Underperformed the feature-based models here", "Needs more data than one subject / 10 reps-per-gesture provides to reach its potential"]
+  }
+};
+
+const MODEL_ORDER = ["rf", "knn", "mlp", "mlp_es", "cnn"];
+
+let activeModel = null;
+let currentSample = null;
+
+// ---------- Hand pose logic ----------
+const NEUTRAL = { index: 25, middle: 25, ring: 25, little: 25, thumbRotate: -20, thumbTranslateX: 0 };
+const POSES = {
+  1:  { index: 80 },                              // Index Flexion
+  2:  { index: 0 },                               // Index Extension
+  3:  { middle: 80 },                             // Middle Flexion
+  4:  { middle: 0 },                              // Middle Extension
+  5:  { ring: 80 },                                // Ring Flexion
+  6:  { ring: 0 },                                 // Ring Extension
+  7:  { little: 80 },                              // Little Finger Flexion
+  8:  { little: 0 },                               // Little Finger Extension
+  9:  { thumbRotate: 15, thumbTranslateX: 22 },    // Thumb Adduction (moves in, across palm)
+  10: { thumbRotate: -55, thumbTranslateX: -18 },  // Thumb Abduction (moves away/out)
+  11: { thumbRotate: 65 },                         // Thumb Flexion (curls over palm)
+  12: { thumbRotate: -40 },                        // Thumb Extension (straightens away)
+};
+
+function applyPose(gestureId) {
+  const pose = Object.assign({}, NEUTRAL, POSES[gestureId] || {});
+  document.getElementById("f-index").style.transform  = `rotate(${pose.index}deg)`;
+  document.getElementById("f-middle").style.transform = `rotate(${pose.middle}deg)`;
+  document.getElementById("f-ring").style.transform   = `rotate(${pose.ring}deg)`;
+  document.getElementById("f-little").style.transform = `rotate(${pose.little}deg)`;
+  document.getElementById("f-thumb").style.transform  =
+    `translateX(${pose.thumbTranslateX}px) rotate(${pose.thumbRotate}deg)`;
+  document.getElementById("poseLabel").textContent =
+    gestureId ? (APP_DATA.gestureNames[gestureId] || "Gesture " + gestureId) : "Neutral";
+}
+
+// ---------- Confusion matrix rendering ----------
+function renderConfusionMatrix(cm) {
+  const max = Math.max(...cm.flat());
+  let html = "<tr><th></th>";
+  for (let j = 1; j <= 12; j++) html += `<th>${j}</th>`;
+  html += "</tr>";
+  for (let i = 0; i < 12; i++) {
+    html += `<tr><th>${i + 1}</th>`;
+    for (let j = 0; j < 12; j++) {
+      const v = cm[i][j];
+      const alpha = max ? (v / max) : 0;
+      const bg = `rgba(37,99,235,${alpha.toFixed(2)})`;
+      const fg = alpha > 0.55 ? "#fff" : "var(--text)";
+      html += `<td style="background:${bg}; color:${fg};">${v || ""}</td>`;
+    }
+    html += "</tr>";
+  }
+  document.getElementById("cmTable").innerHTML = html;
+}
+
+// ---------- Model selection ----------
+function buildModelGrid() {
+  const grid = document.getElementById("modelGrid");
+  grid.innerHTML = "";
+  MODEL_ORDER.forEach(key => {
+    const m = APP_DATA.models[key];
+    if (!m) return;
+    const btn = document.createElement("div");
+    btn.className = "model-btn";
+    btn.textContent = m.name;
+    btn.onclick = () => selectModel(key);
+    btn.id = "btn-" + key;
+    grid.appendChild(btn);
+  });
+}
+
+function selectModel(key) {
+  activeModel = key;
+  MODEL_ORDER.forEach(k => {
+    const btn = document.getElementById("btn-" + k);
+    if (btn) btn.classList.toggle("active", k === key);
+  });
+
+  const data = APP_DATA.models[key];
+  const info = MODEL_INFO[key];
+  document.getElementById("modelInfoBox").classList.add("visible");
+  document.getElementById("modelName").firstChild.textContent = data.name + " ";
+  document.getElementById("modelAcc").textContent = (data.accuracy * 100).toFixed(1) + "% test accuracy";
+  document.getElementById("modelDesc").textContent = info.description;
+  document.getElementById("modelPros").innerHTML = info.pros.map(p => `<li>${p}</li>`).join("");
+  document.getElementById("modelCons").innerHTML = info.cons.map(c => `<li>${c}</li>`).join("");
+  renderConfusionMatrix(data.confusionMatrix);
+
+  document.getElementById("noModelNote").style.display = "none";
+  document.getElementById("classifyBox").style.display = "block";
+  document.getElementById("activeModelNameInline").textContent = data.name;
+
+  if (currentSample) showSampleResult(currentSample);
+}
+
+// ---------- Signal mini-plot ----------
+function drawSignal(signal) {
+  const svg = document.getElementById("sigPlot");
+  svg.innerHTML = "";
+  const w = 320, h = 90, n = signal.length, channels = signal[0].length;
+  const colors = ["#2563eb","#dc2626","#16a34a","#f59e0b","#7c3aed",
+                   "#0891b2","#db2777","#65a30d","#ea580c","#4338ca"];
+  let globalMin = Infinity, globalMax = -Infinity;
+  signal.forEach(row => row.forEach(v => { if (v < globalMin) globalMin = v; if (v > globalMax) globalMax = v; }));
+  const range = (globalMax - globalMin) || 1;
+
+  for (let c = 0; c < channels; c++) {
+    let points = [];
+    for (let t = 0; t < n; t++) {
+      const x = (t / (n - 1)) * w;
+      const y = h - ((signal[t][c] - globalMin) / range) * h;
+      points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    }
+    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    poly.setAttribute("points", points.join(" "));
+    poly.setAttribute("fill", "none");
+    poly.setAttribute("stroke", colors[c % colors.length]);
+    poly.setAttribute("stroke-width", "1.3");
+    poly.setAttribute("opacity", "0.85");
+    svg.appendChild(poly);
+  }
+}
+
+// ---------- Classify flow ----------
+function showSampleResult(sample) {
+  currentSample = sample;
+  const trueLabel = sample.trueLabel;
+  const pred = sample.predictions[activeModel];
+
+  document.getElementById("trueLabelText").textContent =
+    `${APP_DATA.gestureNames[trueLabel]} (#${trueLabel})`;
+  document.getElementById("predLabelText").textContent =
+    `${APP_DATA.gestureNames[pred]} (#${pred})`;
+
+  applyPose(pred);
+  drawSignal(sample.signal);
+
+  const verdictBox = document.getElementById("verdictBox");
+  if (pred === trueLabel) {
+    verdictBox.innerHTML = `<div class="verdict correct">✅ Correct</div>`;
+  } else {
+    verdictBox.innerHTML = `<div class="verdict incorrect">❌ Incorrect</div>`;
+  }
+}
+
+function pickRandomSample() {
+  const samples = APP_DATA.samples;
+  const s = samples[Math.floor(Math.random() * samples.length)];
+  showSampleResult(s);
+}
+
+function pickSampleByGesture(gestureId) {
+  const candidates = APP_DATA.samples.filter(s => s.trueLabel === gestureId);
+  if (candidates.length === 0) return;
+  showSampleResult(candidates[Math.floor(Math.random() * candidates.length)]);
+}
+
+function buildGestureSelect() {
+  const sel = document.getElementById("gestureSelect");
+  sel.innerHTML = "";
+  Object.keys(APP_DATA.gestureNames).forEach(id => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = APP_DATA.gestureNames[id];
+    sel.appendChild(opt);
+  });
+}
+
+// ---------- Init ----------
+window.addEventListener("DOMContentLoaded", () => {
+  if (typeof APP_DATA === "undefined") {
+    document.querySelector(".wrap").innerHTML =
+      `<div class="card" style="text-align:center;">
+         <h2>No data found</h2>
+         <p style="color:var(--text-muted);">
+           <code>visualization_data.js</code> wasn't found next to this page.
+           Run the export cell (Section 13) in your notebook first — it writes
+           that file automatically, right next to this one.
+         </p>
+       </div>`;
+    return;
+  }
+  buildModelGrid();
+  buildGestureSelect();
+  applyPose(null);
+
+  document.getElementById("randomBtn").onclick = pickRandomSample;
+  document.getElementById("pickGestureBtn").onclick = () => {
+    pickSampleByGesture(parseInt(document.getElementById("gestureSelect").value, 10));
+  };
+});
+</script>
+</body>
+</html>
